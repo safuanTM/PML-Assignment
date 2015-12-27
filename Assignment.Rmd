@@ -1,0 +1,100 @@
+---
+title: "Practical Machine Learning"
+author: "safuan"
+date: "December 25, 2015"
+output: 
+  html_document:
+    keep_md: true
+---
+## Prediction Assignment Writeup
+
+This project is to take data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways.
+
+## Data Set up
+Set up the environment using the following chunk
+```{r warning=FALSE,cache=TRUE}
+pml_testing <- read.csv(file="pml-testing.csv",head=TRUE,sep=",")
+pml_training <- read.csv(file="pml-training.csv",head=TRUE,sep=",")
+```
+
+Let's have a look on the 'pml_training' dataset
+```{r warning=FALSE,results='hide'}
+str(pml_training)
+```
+
+We have a total number of 19,622 observations. Let's slice them onto training and testing data sets.
+```{r warning=FALSE,results='hide'}
+library(caret)
+inTrain <- createDataPartition(y=pml_training$classe,
+                               p=0.6,
+                               list = FALSE)
+training <- pml_training[inTrain,]
+testing <- pml_training[-inTrain,]
+summary(training)
+```
+
+##Preprocessing
+The barbell exercises as mentioned above, are classed to 5 different ways. Data is gathered through the data sets, where the column names are suffixes with _belt, _arm, _dumbbell and _forearm. We have shown using 'summary(training)' that column 1 is basically just the row numbers and column 2 contains the user names, which both are actually not required in training the predictor. So are column 3 to column 7.  
+
+1. Let's just get the column with the data from accelerometers only. However, column 160 is required since it is the **classe** column.
+```{r warning=FALSE}
+accelerometers <- grep(pattern = "_belt|_arm|_dumbbell|_forearm", names(training))
+training <- training[,c(accelerometers,160)]
+```
+
+2. Now, let's run nearZeroVar the eradicate the variables which have little variabilities and hence should not be used as predictors.
+```{r warning=FALSE}
+nsv <- nearZeroVar(training,saveMetrics = TRUE)
+training <- training[,!nsv$nzv]
+```
+
+3. We can see from the summary command that there are a lot of NAs in the data set. Here, we will omit any column with ~85% of NAs (>10000 NAs).
+```{r warning=FALSE,message=FALSE}
+training <- training[,colSums(is.na(training))<10000]
+```
+
+## Prediction
+Let's use Random Forest classifier, with 5-fold cross validations. (Random Forest - out sample error should be very minimal and accuracy is exceptional). A better machine can even use a larger cross valiations to increase accuracy.
+```{r warning=FALSE,message=FALSE,cache=TRUE}
+require(randomForest)
+set.seed(2016)
+RFmodFit <- train(training$classe~.,data = training, method="rf",
+                   trControl=trainControl(method = "cv",number = 5))
+RFmodFit
+RFmodFit$finalModel
+```
+
+We now have the predictor RFmodFit. Apply it to the testing data set.
+```{r warning=FALSE,message=FALSE}
+RFpredict <- predict(RFmodFit,newdata=testing)
+confusionMatrix(RFpredict,testing$classe)
+```
+
+Using random forest we achieve a model with accuracy 99%
+
+
+## Use the prediction on the pml_testing data set
+We now have the predictor RFmodFit. Apply it to the pml_testing data set.
+```{r warning=FALSE,message=FALSE}
+RFpredict_pml <- predict(RFmodFit,newdata=pml_testing)
+RFpredict_pml
+```
+
+
+```{r warning=FALSE,message=FALSE,cache=TRUE}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+```
+
+##Results
+We have used the random forest model 5-fold cross validation. The out-of-sample error is very small.
+
+we can now submit the project result.
+```{r warning=FALSE,message=FALSE}
+pml_write_files(RFpredict_pml)
+```
